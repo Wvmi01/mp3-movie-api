@@ -1,70 +1,65 @@
 import logging
+import sqlite3
+
+import pandas as pd
+
+from .database import get_connection, initialize_database
+
 
 logger = logging.getLogger(__name__)
+MOVIE_COLUMNS = ["title", "release_year", "rating", "genre"]
 
 
-class DatasetStorage:
-    def __init__(self):
-        self._store = {}
-        self._counter = 0
+class MovieStorage:
+    def __init__(self, db_path="data/movies.db"):
+        self.db_path = db_path
+        initialize_database(self.db_path)
 
-    def save(self, df, filename):
-        """Store a copy of the data and return a new integer ID."""
-        self._counter += 1
-        dataset_id = self._counter
+    def save(self, df):
+        """Replace all movie rows in one transaction."""
+        connection = get_connection(self.db_path)
 
-        self._store[dataset_id] = {
-            "filename": filename,
-            "df": df.copy()
-        }
+        try:
+            rows = df[MOVIE_COLUMNS].astype(object)
+            rows = rows.where(pd.notna(rows), None)
+            values = list(rows.itertuples(index=False, name=None))
 
-        logger.debug(f"Stored dataset: id={dataset_id}, rows={len(df)}")
+            connection.execute("DELETE FROM movies")
 
-        return dataset_id
+            connection.executemany(
+                """
+                INSERT INTO movies (title, release_year, rating, genre)
+                VALUES (?, ?, ?, ?)
+                """,
+                values
+            )
 
-    def get(self, dataset_id):
-        """Return a copy of the stored DataFrame, or None."""
-        dataset = self._store.get(dataset_id)
+            connection.commit()
+            logger.debug(f"Stored movies in SQLite: rows={len(values)}")
 
-        if dataset is None:
-            logger.debug(f"Dataset not found: id={dataset_id}")
-            return None
+        except sqlite3.Error:
+            connection.rollback()
+            raise
 
-        df = dataset["df"].copy()
+        finally:
+            connection.close()
 
-        logger.debug(f"Retrieved dataset copy: id={dataset_id}, rows={len(df)}")
+    def get(self):
+        """Return the four movie columns as a DataFrame, ordered by id."""
+        connection = get_connection(self.db_path)
 
-        return df
+        try:
+            sql_statement = """
+                SELECT title, release_year, rating, genre
+                FROM movies
+                ORDER BY id
+            """
 
-    def get_metadata(self, dataset_id):
-        """Return the dataset metadata, or None."""
-        dataset = self._store.get(dataset_id)
+            rows = connection.execute(sql_statement).fetchall()
 
-        if dataset is None:
-            return None
+            df = pd.DataFrame([dict(row) for row in rows], columns=MOVIE_COLUMNS)
 
-        df = dataset["df"]
+            return df
 
-        return {
-            "id": dataset_id,
-            "filename": dataset["filename"],
-            "rows": len(df),
-            "columns": len(df.columns),
-            "column_names": df.columns.tolist()
-        }
-
-    def update(self, dataset_id, df):
-        """Replace an existing dataset; return True, or False if missing."""
-        if dataset_id not in self._store:
-            return False
-
-        self._store[dataset_id]["df"] = df.copy()
-
-        logger.debug(f"Updated dataset: id={dataset_id}, rows={len(df)}")
-
-        return True
-
-    def clear(self):
-        """Clear all data and reset the ID counter."""
-        self._store.clear()
-        self._counter = 0
+        finally:
+            connection.close()
