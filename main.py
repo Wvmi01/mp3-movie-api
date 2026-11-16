@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
-from src import DatasetInfo, DatasetStorage, HealthResponse, ProcessConfig, ProcessingReport, setup_logging, log_requests, MovieStorage, MovieUploadInfo, MovieDataResponse, MovieProcessingReport
+from src import HealthResponse, ProcessConfig, setup_logging, log_requests, MovieStorage, MovieUploadInfo, MovieDataResponse, MovieProcessingReport
 from src.storage import MOVIE_COLUMNS
 from data_pipeline import create_cleaning_report, process_data, validate_dataframe
 
